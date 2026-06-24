@@ -158,7 +158,7 @@
 <body>
 
   <h1>Verificador de Peças e Estoque</h1>
-  <div class="status-bd" id="statusBD">⏳ Conectando ao Banco de Dados (datashock.ods)...</div>
+  <div class="status-bd" id="statusBD">⏳ Conectando ao Banco de Dados (Google Sheets - Nuvem)...</div>
 
   <div class="form-section" style="border-color: var(--cor-google);">
     <h2 style="color: var(--cor-google); border-bottom-color: var(--cor-google);">1. Verificar Peças do Relatório (Integração SAS)</h2>
@@ -213,45 +213,47 @@
 
   <script>
     // ==========================================
-    // 1. LÓGICA DO BANCO DE DADOS LOCAL (DATASHOCK)
+    // 1. LÓGICA DO BANCO DE DADOS (GOOGLE APPS SCRIPT)
     // ==========================================
+    const API_ESTOQUE_URL = 'https://script.google.com/macros/s/AKfycby71jdg4zcudOYmfj_yI1_a-K_KCtuw-1EoX14ki61y8Co681HHSFWOdXtsQPcNpP-xvg/exec';
     let bancoProdutos = {};
 
     async function carregarPlanilhaDeProdutos() {
       const statusElement = document.getElementById('statusBD');
+      
       try {
-        const response = await fetch('datashock.ods');
-        if (!response.ok) throw new Error("Arquivo não encontrado no servidor.");
+        // Faz a requisição à sua API apontando para a action getEstoque
+        const response = await fetch(`${API_ESTOQUE_URL}?action=getEstoque`);
         
-        const arrayBuffer = await response.arrayBuffer();
-        const data = new Uint8Array(arrayBuffer);
-        const workbook = XLSX.read(data, {type: 'array'});
+        if (!response.ok) throw new Error("Erro na comunicação com a API do Apps Script.");
         
-        const primeiraAba = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[primeiraAba];
+        const dados = await response.json();
         
-        const jsonData = XLSX.utils.sheet_to_json(worksheet, {header: 1});
-        
-        for(let i = 1; i < jsonData.length; i++) {
-          let linha = jsonData[i];
-          if(linha && linha[0]) {
-            let cod = linha[0].toString().trim().padStart(6, '0');
-            bancoProdutos[cod] = {
-              descricao: linha[1] ? linha[1].toString() : "SEM DESCRIÇÃO",
-              estoque: linha[8] !== undefined ? parseFloat(linha[8]) : 0
+        if (dados.error) {
+          throw new Error(dados.error);
+        }
+
+        // Converte o objeto retornado (dados.nomes e dados.estoque) para a estrutura do bancoProdutos local
+        for (let cod in dados.nomes) {
+          if(cod) {
+            let codTratado = cod.toString().trim().padStart(6, '0');
+            bancoProdutos[codTratado] = {
+              descricao: dados.nomes[cod] || "SEM DESCRIÇÃO",
+              estoque: dados.estoque[cod] !== undefined ? parseFloat(dados.estoque[cod]) : 0
             };
           }
         }
-        statusElement.textContent = `✅ Banco de Dados Local Carregado (${Object.keys(bancoProdutos).length} peças em sistema)`;
+
+        statusElement.textContent = `✅ Banco de Dados da Nuvem Carregado (${Object.keys(bancoProdutos).length} peças em sistema)`;
         statusElement.style.color = '#28a745';
       } catch (error) {
-        console.warn("Aviso:", error);
-        statusElement.textContent = "⚠️ Erro ao carregar 'datashock.ods'. Verifique o diretório do arquivo.";
+        console.error("Aviso:", error);
+        statusElement.textContent = "⚠️ Erro ao carregar dados de estoque da nuvem. Verifique a conexão.";
         statusElement.style.color = '#dc3545';
       }
     }
 
-    // Inicializa a base de dados ao abrir a página
+    // Inicializa a base de dados via API ao abrir a página
     document.addEventListener("DOMContentLoaded", carregarPlanilhaDeProdutos);
 
     // ==========================================
@@ -295,7 +297,7 @@
     }
 
     // ==========================================
-    // 3. INTEGRAÇÃO GOOGLE SHEETS (LÓGICA IDÊNTICA AO ORIGINAL)
+    // 3. INTEGRAÇÃO GOOGLE SHEETS (LEITURA DO LAUDO/PEÇAS)
     // ==========================================
     const GOOGLE_SHEETS_ID = '1Txe61UvhFurTnllGhH8-ESKlriwLIA2zIHwxKg22EeA';
 
@@ -313,8 +315,8 @@
       btnBusca.disabled = true;
       btnBusca.textContent = "⏳ Buscando...";
       
-      tbody.innerHTML = `<tr><td colspan="4" class="nao-encontrado">Carregando dados da nuvem...</td></tr>`;
-      resumoDiv.style.display = 'none'; // Esconde o resumo enquanto carrega
+      tbody.innerHTML = `<tr><td colspan="4" class="nao-encontrado">Carregando dados do relatório...</td></tr>`;
+      resumoDiv.style.display = 'none';
 
       try {
         // --- BUSCA NA ABA 'laudos' ---
@@ -362,7 +364,7 @@
           }
         }
 
-        // Validação se encontrou algo (mesma lógica do script original)
+        // Validação se encontrou algo
         if(!clienteStr && pecasEncontradas.length === 0 && serieRobo === "N/A") {
             alert("Nenhuma informação encontrada para este ID nas abas 'laudos' e 'pecas'.");
             tbody.innerHTML = `<tr><td colspan="4" class="nao-encontrado">Nenhuma busca realizada. Insira um ID acima.</td></tr>`;
@@ -381,12 +383,12 @@
 
         if (pecasEncontradas.length > 0) {
             pecasEncontradas.forEach(p => {
-                // Cruza o código do Google com a base local do datashock.ods
-                const infoLocal = bancoProdutos[p.codigo] || { descricao: "⚠️ Item não cadastrado no banco local", estoque: 0 };
+                // Cruza o código do relatório com a base em cache vinda da API
+                const infoEstoque = bancoProdutos[p.codigo] || { descricao: "⚠️ Item não localizado no sistema de estoque", estoque: 0 };
                 
                 // Formatação visual do estoque
-                let classeEstoque = infoLocal.estoque >= p.qtd ? 'estoque-ok' : 'estoque-baixo';
-                let estoqueDisplay = infoLocal.estoque;
+                let classeEstoque = infoEstoque.estoque >= p.qtd ? 'estoque-ok' : 'estoque-baixo';
+                let estoqueDisplay = infoEstoque.estoque;
 
                 if (!bancoProdutos[p.codigo]) {
                   classeEstoque = '';
@@ -396,7 +398,7 @@
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                   <td style="font-weight: bold; color: var(--cor-primaria);">${p.codigo}</td>
-                  <td>${infoLocal.descricao}</td>
+                  <td>${infoEstoque.descricao}</td>
                   <td style="text-align: center;">${p.qtd}</td>
                   <td style="text-align: center;" class="${classeEstoque}">${estoqueDisplay}</td>
                 `;
