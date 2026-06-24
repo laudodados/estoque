@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <title>Verificador de Peças e Estoque - CD</title>
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+  <style>
+    /* --- ESTILO GERAL DO FORMULÁRIO --- */
+    :root {
+      --cor-primaria: #002060;
+      --cor-fundo: #8ad6cf;
+      --cor-card: #ffffff;
+      --cor-borda: #dee2e6;
+      --cor-sombra: rgba(0, 0, 0, 0.1);
+      --cor-texto: #495057;
+      --cor-titulo: #212529;
+      --cor-sucesso: #28a745;
+      --cor-alerta: #ffc107;
+      --cor-google: #2e7d32;
+      --cor-google-hover: #1b5e20;
+    }
+
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, "Rubik", Roboto, Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: var(--cor-fundo);
+      color: var(--cor-texto);
+    }
+
+    h1 { text-align: center; color: var(--cor-titulo); margin-bottom: 5px;}
+    .status-bd { text-align: center; font-size: 13px; font-weight: bold; margin-bottom: 20px; color: var(--cor-primaria); }
+
+    .form-section {
+      border: 1px solid var(--cor-borda); 
+      padding: 25px; 
+      margin: 20px auto; 
+      border-radius: 8px; 
+      background-color: var(--cor-card);
+      box-shadow: 0 4px 12px var(--cor-sombra);
+      max-width: 900px;
+    }
+
+    .form-section h2 {
+      margin-top: 0;
+      border-bottom: 2px solid var(--cor-primaria);
+      padding-bottom: 10px;
+      color: var(--cor-primaria);
+      font-size: 18px;
+    }
+
+    .form-row { 
+      display: grid; 
+      grid-template-columns: 1fr auto; 
+      gap: 15px; 
+      align-items: end;
+      margin-bottom: 20px; 
+    }
+    
+    .form-group { width: 100%; }
+    
+    label { 
+      display: block; 
+      font-weight: bold; 
+      margin-bottom: 5px; 
+      color: var(--cor-titulo); 
+      font-size: 14px;
+    }
+    
+    input[type="text"] {
+      width: 100%; 
+      padding: 10px 12px; 
+      border-radius: 4px; 
+      border: 1px solid var(--cor-borda); 
+      font-size: 15px; 
+      box-sizing: border-box;
+      transition: border-color 0.2s;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: var(--cor-primaria);
+    }
+
+    /* BOTOES */
+    button { 
+      padding: 10px 20px; 
+      font-size: 15px; 
+      font-weight: bold; 
+      border: none; 
+      border-radius: 4px; 
+      cursor: pointer; 
+      transition: background-color 0.2s;
+      height: 42px;
+    }
+    .btn-buscar { background-color: var(--cor-google); color: white; }
+    .btn-buscar:hover { background-color: var(--cor-google-hover); }
+    .btn-consultar { background-color: var(--cor-primaria); color: white; }
+    .btn-consultar:hover { background-color: #001540; }
+
+    /* RESUMO DO EQUIPAMENTO */
+    .resumo-busca {
+      background-color: #e8f5e9;
+      border-left: 4px solid var(--cor-google);
+      padding: 15px;
+      margin-bottom: 15px;
+      border-radius: 4px;
+      display: none;
+    }
+    .resumo-busca p { margin: 5px 0; font-size: 14px; }
+    .resumo-busca span { font-weight: bold; color: var(--cor-titulo); }
+
+    /* TABELA DE RESULTADOS */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+    }
+    th, td {
+      border: 1px solid var(--cor-borda);
+      padding: 12px;
+      text-align: left;
+      font-size: 14px;
+    }
+    th {
+      background-color: #f8f9fa;
+      color: var(--cor-primaria);
+      font-weight: bold;
+    }
+    tr:nth-child(even) { background-color: #fcfcfc; }
+    
+    .estoque-baixo { color: #dc3545; font-weight: bold; }
+    .estoque-ok { color: var(--cor-sucesso); font-weight: bold; }
+    .nao-encontrado { text-align: center; font-style: italic; color: #6c757d; padding: 20px !important; }
+
+    /* CARD DE CONSULTA ISOLADA */
+    .resultado-isolado {
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 6px;
+      background-color: #e9ecef;
+      display: none;
+      border-left: 5px solid var(--cor-primaria);
+    }
+    .resultado-isolado.ativo { display: block; }
+    .resultado-isolado p { margin: 5px 0; font-size: 15px; }
+    .destaque-valor { font-weight: bold; font-size: 18px; color: var(--cor-primaria); }
+
+    @media (max-width: 600px) {
+      .form-row { grid-template-columns: 1fr; }
+      button { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Verificador de Peças e Estoque</h1>
+  <div class="status-bd" id="statusBD">⏳ Conectando ao Banco de Dados (datashock.ods)...</div>
+
+  <div class="form-section" style="border-color: var(--cor-google);">
+    <h2 style="color: var(--cor-google); border-bottom-color: var(--cor-google);">1. Verificar Peças do Relatório (Integração SAS)</h2>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="buscaIdGoogle">ID do Relatório:</label>
+        <input type="text" id="buscaIdGoogle" placeholder="Digite o ID apontado no sistema e tecle Enter..." onkeypress="if(event.key === 'Enter') buscarDadosGoogle()">
+      </div>
+      <button type="button" id="btnBuscarGoogle" class="btn-buscar" onclick="buscarDadosGoogle()">🔍 Buscar Peças</button>
+    </div>
+
+    <div id="resumoEquipamento" class="resumo-busca">
+      <p>Cliente: <span id="resCliente">-</span></p>
+      <p>Equipamento: <span id="resEquipamento">-</span></p>
+      <p>Números de Série: <span id="resSeries">-</span></p>
+    </div>
+
+    <div style="overflow-x: auto;">
+      <table id="tabelaPecas">
+        <thead>
+          <tr>
+            <th style="width: 15%;">Código</th>
+            <th style="width: 45%;">Descrição</th>
+            <th style="width: 20%; text-align: center;">Qtd. Requisitada</th>
+            <th style="width: 20%; text-align: center;">Estoque Atual</th>
+          </tr>
+        </thead>
+        <tbody id="corpoTabelaPecas">
+          <tr>
+            <td colspan="4" class="nao-encontrado">Nenhuma busca realizada. Insira um ID acima.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <h2>2. Consulta Isolada de Estoque</h2>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="buscaCodIsolado">Código da Peça:</label>
+        <input type="text" id="buscaCodIsolado" placeholder="Digite o código (ex: 014785)..." onkeypress="if(event.key === 'Enter') consultarEstoqueIsolado()">
+      </div>
+      <button type="button" class="btn-consultar" onclick="consultarEstoqueIsolado()">📦 Consultar</button>
+    </div>
+
+    <div id="cardResultadoIsolado" class="resultado-isolado">
+      <p><strong>Descrição:</strong> <span id="resIsoDescricao" class="destaque-valor">-</span></p>
+      <p><strong>Estoque Disponível:</strong> <span id="resIsoEstoque" class="destaque-valor">-</span></p>
+    </div>
+  </div>
+
+  <script>
+    // ==========================================
+    // 1. LÓGICA DO BANCO DE DADOS LOCAL (DATASHOCK)
+    // ==========================================
+    let bancoProdutos = {};
+
+    async function carregarPlanilhaDeProdutos() {
+      const statusElement = document.getElementById('statusBD');
+      try {
+        const response = await fetch('datashock.ods');
+        if (!response.ok) throw new Error("Arquivo não encontrado no servidor.");
+        
+        const arrayBuffer = await response.arrayBuffer();
+        const data = new Uint8Array(arrayBuffer);
+        const workbook = XLSX.read(data, {type: 'array'});
+        
+        const primeiraAba = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[primeiraAba];
+        
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, {header: 1});
+        
+        for(let i = 1; i < jsonData.length; i++) {
+          let linha = jsonData[i];
+          if(linha && linha[0]) {
+            let cod = linha[0].toString().trim().padStart(6, '0');
+            bancoProdutos[cod] = {
+              descricao: linha[1] ? linha[1].toString() : "SEM DESCRIÇÃO",
+              estoque: linha[8] !== undefined ? parseFloat(linha[8]) : 0
+            };
+          }
+        }
+        statusElement.textContent = `✅ Banco de Dados Local Carregado (${Object.keys(bancoProdutos).length} peças em sistema)`;
+        statusElement.style.color = '#28a745';
+      } catch (error) {
+        console.warn("Aviso:", error);
+        statusElement.textContent = "⚠️ Erro ao carregar 'datashock.ods'. Verifique o diretório do arquivo.";
+        statusElement.style.color = '#dc3545';
+      }
+    }
+
+    // Inicializa a base de dados ao abrir a página
+    document.addEventListener("DOMContentLoaded", carregarPlanilhaDeProdutos);
+
+    // ==========================================
+    // 2. CONSULTA ISOLADA DE ESTOQUE
+    // ==========================================
+    function consultarEstoqueIsolado() {
+      const input = document.getElementById('buscaCodIsolado');
+      let codDigitado = input.value.trim();
+      const cardResult = document.getElementById('cardResultadoIsolado');
+      
+      if (!codDigitado) {
+        alert("Por favor, digite um código de peça válido.");
+        input.focus();
+        return;
+      }
+
+      // Padroniza para 6 dígitos
+      codDigitado = codDigitado.padStart(6, '0');
+      input.value = codDigitado;
+
+      const produto = bancoProdutos[codDigitado];
+      
+      cardResult.classList.add('ativo');
+
+      if (produto) {
+        document.getElementById('resIsoDescricao').textContent = produto.descricao;
+        
+        const estoqueEl = document.getElementById('resIsoEstoque');
+        estoqueEl.textContent = produto.estoque;
+        
+        if (produto.estoque <= 0) {
+          estoqueEl.style.color = '#dc3545';
+        } else {
+          estoqueEl.style.color = '#28a745';
+        }
+      } else {
+        document.getElementById('resIsoDescricao').textContent = "⚠️ CÓDIGO NÃO ENCONTRADO NO SISTEMA";
+        document.getElementById('resIsoEstoque').textContent = "N/A";
+        document.getElementById('resIsoEstoque').style.color = '#495057';
+      }
+    }
+
+    // ==========================================
+    // 3. INTEGRAÇÃO GOOGLE SHEETS (LÓGICA IDÊNTICA AO ORIGINAL)
+    // ==========================================
+    const GOOGLE_SHEETS_ID = '1Txe61UvhFurTnllGhH8-ESKlriwLIA2zIHwxKg22EeA';
+
+    async function buscarDadosGoogle() {
+      const idBusca = document.getElementById('buscaIdGoogle').value.trim();
+      const tbody = document.getElementById('corpoTabelaPecas');
+      const resumoDiv = document.getElementById('resumoEquipamento');
+      
+      if(!idBusca) {
+        alert("Por favor, digite o ID do Relatório SAS para buscar.");
+        return;
+      }
+      
+      const btnBusca = document.getElementById('btnBuscarGoogle');
+      btnBusca.disabled = true;
+      btnBusca.textContent = "⏳ Buscando...";
+      
+      tbody.innerHTML = `<tr><td colspan="4" class="nao-encontrado">Carregando dados da nuvem...</td></tr>`;
+      resumoDiv.style.display = 'none'; // Esconde o resumo enquanto carrega
+
+      try {
+        // --- BUSCA NA ABA 'laudos' ---
+        const urlLaudos = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEETS_ID}/gviz/tq?tqx=out:csv&sheet=laudos`;
+        const resLaudos = await fetch(urlLaudos);
+        const csvLaudos = await resLaudos.text();
+        const wbLaudos = XLSX.read(csvLaudos, {type: 'string'});
+        const dadosLaudos = XLSX.utils.sheet_to_json(wbLaudos.Sheets[wbLaudos.SheetNames[0]], {header: 1});
+
+        let serieRobo = "N/A", serieFonte = "N/A", serieMotor = "N/A";
+        for(let i = 1; i < dadosLaudos.length; i++) {
+          if(dadosLaudos[i] && dadosLaudos[i][1] == idBusca) { // Coluna B = Index 1
+            serieRobo = dadosLaudos[i][7] || "N/A"; // Coluna H = Index 7
+            serieFonte = dadosLaudos[i][8] || "N/A"; // Coluna I = Index 8
+            serieMotor = dadosLaudos[i][9] || "N/A"; // Coluna J = Index 9
+            break;
+          }
+        }
+
+        // --- BUSCA NA ABA 'pecas' ---
+        const urlPecas = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEETS_ID}/gviz/tq?tqx=out:csv&sheet=pecas`;
+        const resPecas = await fetch(urlPecas);
+        const csvPecas = await resPecas.text();
+        const wbPecas = XLSX.read(csvPecas, {type: 'string'});
+        const dadosPecas = XLSX.utils.sheet_to_json(wbPecas.Sheets[wbPecas.SheetNames[0]], {header: 1});
+
+        let clienteStr = "", equipamentoStr = "";
+        let pecasEncontradas = [];
+
+        for(let i = 1; i < dadosPecas.length; i++) {
+          if(dadosPecas[i] && dadosPecas[i][1] == idBusca) { // Coluna B = Index 1
+            if(!clienteStr) clienteStr = dadosPecas[i][2] || ""; // Coluna C = Index 2
+            if(!equipamentoStr) equipamentoStr = dadosPecas[i][3] || ""; // Coluna D = Index 3
+            
+            let codPeca = dadosPecas[i][4]; // Coluna E = Index 4
+            let qtdPeca = dadosPecas[i][6]; // Coluna G = Index 6
+            
+            if(codPeca) {
+              let codTratado = codPeca.toString().trim().padStart(6, '0');
+              pecasEncontradas.push({ 
+                codigo: codTratado, 
+                qtd: parseFloat(qtdPeca) || 1 
+              });
+            }
+          }
+        }
+
+        // Validação se encontrou algo (mesma lógica do script original)
+        if(!clienteStr && pecasEncontradas.length === 0 && serieRobo === "N/A") {
+            alert("Nenhuma informação encontrada para este ID nas abas 'laudos' e 'pecas'.");
+            tbody.innerHTML = `<tr><td colspan="4" class="nao-encontrado">Nenhuma busca realizada. Insira um ID acima.</td></tr>`;
+            btnBusca.disabled = false;
+            btnBusca.textContent = "🔍 Buscar Peças";
+            return;
+        }
+
+        // --- ALIMENTA A INTERFACE COM OS DADOS ENCONTRADOS ---
+        document.getElementById('resCliente').textContent = clienteStr || "NÃO INFORMADO";
+        document.getElementById('resEquipamento').textContent = equipamentoStr || "NÃO INFORMADO";
+        document.getElementById('resSeries').textContent = `Robô: ${serieRobo} | Fonte: ${serieFonte} | Motor: ${serieMotor}`;
+        resumoDiv.style.display = 'block';
+
+        tbody.innerHTML = ''; 
+
+        if (pecasEncontradas.length > 0) {
+            pecasEncontradas.forEach(p => {
+                // Cruza o código do Google com a base local do datashock.ods
+                const infoLocal = bancoProdutos[p.codigo] || { descricao: "⚠️ Item não cadastrado no banco local", estoque: 0 };
+                
+                // Formatação visual do estoque
+                let classeEstoque = infoLocal.estoque >= p.qtd ? 'estoque-ok' : 'estoque-baixo';
+                let estoqueDisplay = infoLocal.estoque;
+
+                if (!bancoProdutos[p.codigo]) {
+                  classeEstoque = '';
+                  estoqueDisplay = 'N/A';
+                }
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                  <td style="font-weight: bold; color: var(--cor-primaria);">${p.codigo}</td>
+                  <td>${infoLocal.descricao}</td>
+                  <td style="text-align: center;">${p.qtd}</td>
+                  <td style="text-align: center;" class="${classeEstoque}">${estoqueDisplay}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } else {
+            tbody.innerHTML = `<tr><td colspan="4" class="nao-encontrado">Nenhuma peça encontrada vinculada a este ID.</td></tr>`;
+        }
+
+      } catch (e) {
+        console.error("Erro na integração Google:", e);
+        tbody.innerHTML = `<tr><td colspan="4" class="nao-encontrado" style="color: #dc3545;">Erro de conexão com o Google Sheets. Verifique o console.</td></tr>`;
+      } finally {
+        btnBusca.disabled = false;
+        btnBusca.textContent = "🔍 Buscar Peças";
+      }
+    }
+  </script>
+</body>
+</html>
